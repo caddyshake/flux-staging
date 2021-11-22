@@ -2,21 +2,67 @@
 apiVersion: helm.toolkit.fluxcd.io/v2beta1
 kind: HelmRelease
 metadata:
-  name: devops-toolkit-staging
+  name: alb-ingress-nginx-public
   namespace: flux-system
 spec:
-  releaseName: devops-toolkit-staging
+  releaseName: alb-ingress-nginx-public
+  targetNamespace: alb-ingress-nginx-public
+  upgrade:
+    preserveValues: false
+  install:
+    createNamespace: true
+  interval: 5m
   chart:
     spec:
-      chart: helm
+      chart: ingress-nginx
+      version: '3.39.0'
       sourceRef:
-        kind: GitRepository
-        name: devops-toolkit
-  interval: 30s
-  targetNamespace: staging
+        kind: HelmRepository
+        name: ingress-nginx
+        namespace: flux-system
+      interval: 1m
   values:
-    image:
-      tag: 2.9.9
-    ingress:
-      host: staging.devops-toolkit.localhost.nip.io
-
+    controller:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: In
+                      values:
+                        - ingress-nginx
+                    - key: app.kubernetes.io/instance
+                      operator: In
+                      values:
+                        - alb-ingress-nginx-public
+                    - key: app.kubernetes.io/component
+                      operator: In
+                      values:
+                        - controller
+                topologyKey: kubernetes.io/hostname
+      replicaCount: 2
+      ingressClass: alb-nginx-public
+      proxySetHeaders:
+        X-Different-Name: "true"
+        X-Request-Start: "t=${msec}"
+        X-Using-Nginx-Controller: "true"
+        proxy-protocol: "True"
+        real_ip_header: "X-Forwarded-For"
+        set-real-ip-from: "0.0.0.0/0"
+        real_ip_recursive: "on"
+      publishService:
+        enabled: false
+      podAnnotations:
+        prometheus.io/scrape: "false"
+        prometheus.io/port: "10254"
+      service:
+        enabled: true
+        enableHttp: true
+        enableHttps: true
+        targetPorts:
+          http: http
+          https: http
+        type: NodePort
